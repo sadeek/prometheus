@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind:  StatefulSet
+metadata:
+  name: prometheus-deployment
+  namespace: monitoring
+spec:
+  serviceName: prometheus-server
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus-server
+  template:
+    metadata:
+      labels:
+        app: prometheus-server
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.2.1
+          args:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--storage.tsdb.path=/prometheus/"
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - name: prometheus-config-volume
+              mountPath: /etc/prometheus/
+            - name: prometheus-storage-volume
+              mountPath: /prometheus/
+              subPath: ""
+#      nodeName: elk3m5.cisco.com
+      initContainers:
+       - name: "init-chown-prometheus"
+         image: busybox
+         imagePullPolicy: Always
+#         command: ["/bin/sh", "-ec", "while :; do echo '.'; sleep 5 ; done"]
+         command: [chown, -R, "nobody:nogroup", /prometheus/]
+         volumeMounts:
+            - name: prometheus-storage-volume
+              mountPath: /prometheus/
+      volumes:
+        - name: prometheus-config-volume
+          configMap:
+            defaultMode: 420
+            name: prometheus-server-conf
+  volumeClaimTemplates:
+   - metadata:
+       name: prometheus-storage-volume
+       labels:
+         app: prometheus-server
+     spec:
+       accessModes: [ "ReadWriteOnce" ]
+       storageClassName: local-storage
+       resources:
+         requests:
+           storage: 50Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-service
+  namespace: monitoring
+  annotations:
+      prometheus.io/scrape: 'true'
+      prometheus.io/port:   '9090'
+
+spec:
+  selector:
+    app: prometheus-server
+  type: NodePort
+  ports:
+    - port: 8080
+      targetPort: 9090
+      nodePort: 30000
